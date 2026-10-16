@@ -1,0 +1,498 @@
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>象棋小巫师</title>
+    <script type="text/javascript" src="book.js"></script>
+    <script type="text/javascript" src="position.js"></script>
+    <script type="text/javascript" src="search.js"></script>
+    <script type="text/javascript" src="board.js"></script>
+    <!-- 不再引用 cchess.js，因为已将代码内联 -->
+    <script type="text/javascript" src="book_manager.js"></script>
+    <script type="text/javascript" src="book_learner.js"></script>
+    <style type="text/css"><!--
+body { background: url(../background.gif); }
+span.td { display: inline-block; }
+div.label { font-size: 14px; padding:2px; }
+select { font-size: 14px; width: 108px; padding:2px; }
+option { font-size: 14px; }
+input.button { font-size: 14px; width: 108px; }
+input.small-button { font-size: 12px; width: 100px; padding: 2px; }
+input.tiny-input { font-size: 11px; width: 50px; padding: 2px; }
+input.file-input { font-size: 11px; width: 160px; }
+label { font-size: 14px; }
+.learn-status { font-size: 12px; color: #666; padding: 2px; }
+.learn-status.success { color: green; }
+.learn-status.error { color: red; }
+.learn-status.loading { color: blue; }
+.section-divider { padding-top: 8px; border-top: 1px solid #ccc; }
+.section-title { font-weight: bold; }
+.harvest-btn { font-size:14px; padding:8px 16px; background:#4CAF50; color:white; border:none; border-radius:4px; cursor:pointer; }
+.harvest-btn:hover { background:#45a049; }
+    --></style>
+  </head>
+  <body>
+    <div style="text-align:center;font-size:28px;font-family:楷体">象棋小巫师</div>
+    <div style="height:16px"></div>
+    <div style="text-align:center;white-space:nowrap">
+      <span class="td" style="margin-right:10px">
+        <div id="container"></div>
+      </span><span class="td" style="vertical-align:top;width:120px;"><div style="text-align:left">
+        <div class="label">谁先走</div>
+        <div><select id="selMoveMode" size="3">
+          <option selected value="0">玩家先走</option>
+          <option value="1">电脑先走</option>
+          <option value="2">电脑对电脑</option>
+        </select></div>
+        <div class="label">让子设置</div>
+        <div><select id="selHandicap" style="padding:0px">
+          <option selected value="0">不让子</option>
+          <option value="1">让单车</option>
+          <option value="2">让双车</option>
+          <option value="3">让九子</option>
+        </select></div>
+        <div style="padding-top:2px"><input type="button" class="button" value="重新开始" onclick="restart_click()"></div>
+        <div style="padding-top:2px"><input type="button" class="button" value="悔棋" onclick="retract_click()"></div>
+        <div style="height:12px"></div>
+        <div class="label">电脑水平</div>
+        <div><select id="selLevel" size="3" onchange="level_change()">
+          <option selected value="0">入门</option>
+          <option value="1">业余</option>
+          <option value="2">专业</option>
+        </select></div>
+        <div style="height:12px"></div>
+        <div><input type="checkbox" class="checkbox" id="chkAnimated" checked onclick="board.animated = checked"><label for="chkAnimated">动画</label></div>
+        <div><input type="checkbox" class="checkbox" checked onclick="board.setSound(checked)"><label for="chkSound">音效</label></div>
+        <div style="height:6px"></div>
+        
+        <!-- 智能学习按钮 -->
+        <div style="padding-top:2px">
+          <input type="button" class="button" value="🧠 智能学习" onclick="openLearnDialog()" style="background:#e8f0fe;cursor:pointer;">
+        </div>
+        
+        <!-- 保存收获按钮 -->
+        <div style="padding-top:6px; border-top:1px solid #ccc;">
+          <button class="harvest-btn" onclick="saveHarvest()">🏆 保存本局收获</button>
+          <span id="harvestStatus" style="font-size:12px;color:#888;margin-left:5px;">就绪</span>
+        </div>
+        
+        <div style="height:6px"></div>
+        <div class="label">走法列表</div>
+        <div><select id="selMoveList" size="10" style="font-family:楷体" onchange="moveList_change()">
+          <option selected value="0">=== 开始 ===</option>
+        </select></div>
+      </div></span>
+    </div>
+
+    <!-- 智能学习对话框 -->
+    <div id="learnDialog" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;" onclick="if(event.target==this)closeLearnDialog()">
+      <div id="learnDialogBox" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:white;border-radius:10px;padding:20px 25px;width:340px;box-shadow:0 10px 40px rgba(0,0,0,0.3);max-height:80%;overflow-y:auto;">
+        <div id="dialogHeader" style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #eee;padding-bottom:10px;margin-bottom:15px;" onmousedown="startDrag(event)">
+          <span style="font-size:20px;font-weight:bold;">🧠 智能学习</span>
+          <span onclick="closeLearnDialog()" style="cursor:pointer;font-size:28px;color:#999;line-height:1;font-weight:bold;">&times;</span>
+        </div>
+        
+        <!-- 手动学习 -->
+        <div style="margin-bottom:15px;">
+          <div style="font-weight:bold;font-size:14px;margin-bottom:6px;">📖 手动学习</div>
+          <div>
+            <input type="text" id="inputLock" placeholder="lock" style="width:60px;font-size:12px;padding:3px;border:1px solid #ccc;border-radius:3px;">
+            <input type="text" id="inputMv" placeholder="mv" style="width:50px;font-size:12px;padding:3px;border:1px solid #ccc;border-radius:3px;">
+            <input type="text" id="inputWeight" placeholder="权重" style="width:45px;font-size:12px;padding:3px;border:1px solid #ccc;border-radius:3px;" value="5">
+          </div>
+          <div style="margin-top:6px;">
+            <input type="button" value="学习这步棋" onclick="learnMove_click()" style="font-size:12px;padding:4px 12px;border:1px solid #ccc;border-radius:3px;cursor:pointer;background:#f0f0f0;">
+            <input type="button" value="导出数据" onclick="exportBook_click()" style="font-size:12px;padding:4px 12px;border:1px solid #ccc;border-radius:3px;cursor:pointer;background:#f0f0f0;">
+          </div>
+          <div><span id="learnStatus" style="font-size:12px;color:#888;">就绪</span></div>
+        </div>
+        
+        <!-- 棋谱学习 -->
+        <div style="border-top:1px solid #eee;padding-top:15px;margin-bottom:15px;">
+          <div style="font-weight:bold;font-size:14px;margin-bottom:6px;">📂 棋谱学习</div>
+          <div>
+            <input type="file" id="fileInput" accept=".pgn,.txt" style="font-size:12px;width:100%;border:1px solid #ccc;border-radius:3px;padding:2px;">
+          </div>
+          <div style="margin-top:6px;">
+            <input type="button" value="学习棋谱" onclick="learnFromFile_click()" style="font-size:12px;padding:4px 12px;border:1px solid #ccc;border-radius:3px;cursor:pointer;background:#f0f0f0;">
+            <input type="button" value="测试" onclick="testLearner_click()" style="font-size:12px;padding:4px 12px;border:1px solid #ccc;border-radius:3px;cursor:pointer;background:#f0f0f0;">
+          </div>
+          <div><span id="learnFileStatus" style="font-size:12px;color:#888;">就绪</span></div>
+        </div>
+        
+        <div style="border-top:1px solid #eee;padding-top:12px;font-size:12px;color:#999;text-align:center;">
+          💡 提示: 控制台执行 debugPosition() 获取当前局面数据
+        </div>
+      </div>
+    </div>
+
+    <script type="text/javascript"><!--
+"use strict";
+
+// ============================================================
+// 原始 cchess.js 的全部代码（完全未改动，包含 move2Iccs）
+// ============================================================
+
+function move2Iccs(mv) {
+  var sqSrc = SRC(mv);
+  var sqDst = DST(mv);
+  var xSrc = FILE_X(sqSrc);
+  var ySrc = RANK_Y(sqSrc);
+  var xDst = FILE_X(sqDst);
+  var yDst = RANK_Y(sqDst);
+  return String.fromCharCode(96 + xSrc) + ySrc +
+         String.fromCharCode(96 + xDst) + yDst;
+}
+
+var STARTUP_FEN = [
+  "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w",
+  "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKAB1R w",
+  "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/R1BAKAB1R w",
+  "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/9/1C5C1/9/RN2K2NR w",
+];
+
+function createOption(text, value, ie8) {
+  var opt = document.createElement("option");
+  opt.selected = true;
+  opt.value = value;
+  if (ie8) {
+    opt.text = text;
+  } else {
+    opt.innerHTML = text.replace(/ /g, "&nbsp;");
+  }
+  return opt;
+}
+
+var board = new Board(container, "images/", "sounds/");
+board.setSearch(16);
+board.millis = 10;
+board.computer = 1;
+
+// ★★★ 新增：启动时自动从 GitHub 加载学习数据 ★★★
+if (typeof BookManager !== 'undefined') {
+  BookManager.loadFromGitHub().then(function(result) {
+    if (result.success) {
+      console.log('✅ 从 GitHub 加载了 ' + result.count + ' 条历史走法');
+    } else {
+      console.warn('⚠️ 从 GitHub 加载数据失败:', result.message);
+    }
+  });
+}
+
+board.onAddMove = function() {
+  var counter = (board.pos.mvList.length >> 1);
+  var space = (counter > 99 ? "    " : "   ");
+  counter = (counter > 9 ? "" : " ") + counter + ".";
+  var text = (board.pos.sdPlayer == 0 ? space : counter) + move2Iccs(board.mvLast);
+  var value = "" + board.mvLast;
+  try {
+    selMoveList.add(createOption(text, value, false));
+  } catch (e) {
+    selMoveList.add(createOption(text, value, true));
+  }
+  selMoveList.scrollTop = selMoveList.scrollHeight;
+};
+
+function level_change() {
+  board.millis = Math.pow(10, selLevel.selectedIndex + 1);
+}
+
+function restart_click() {
+  selMoveList.options.length = 1;
+  selMoveList.selectedIndex = 0;
+  board.computer = 1 - selMoveMode.selectedIndex;
+  board.restart(STARTUP_FEN[selHandicap.selectedIndex]);
+  // 重置收获状态
+  var hs = document.getElementById('harvestStatus');
+  if (hs) { hs.textContent = '就绪'; hs.style.color = '#888'; }
+}
+
+function retract_click() {
+  for (var i = board.pos.mvList.length; i < selMoveList.options.length; i ++) {
+    board.pos.makeMove(parseInt(selMoveList.options[i].value));
+  }
+  board.retract();
+  selMoveList.options.length = board.pos.mvList.length;
+  selMoveList.selectedIndex = selMoveList.options.length - 1;
+}
+
+function moveList_change() {
+  if (board.result == RESULT_UNKNOWN) {
+    selMoveList.selectedIndex = selMoveList.options.length - 1;
+    return;
+  }
+  var from = board.pos.mvList.length;
+  var to = selMoveList.selectedIndex;
+  if (from == to + 1) {
+    return;
+  }
+  if (from > to + 1) {
+    for (var i = to + 1; i < from; i ++) {
+      board.pos.undoMakeMove();
+    }
+  } else {
+    for (var i = from; i <= to; i ++) {
+      board.pos.makeMove(parseInt(selMoveList.options[i].value));
+    }
+  }
+  board.flushBoard();
+}
+
+// ============================================================
+// 以下是新增功能（智能学习、拖拽、保存收获等）
+// ============================================================
+
+// 智能学习对话框
+function openLearnDialog() {
+  var box = document.getElementById('learnDialogBox');
+  box.style.top = '50%';
+  box.style.left = '50%';
+  box.style.transform = 'translate(-50%, -50%)';
+  document.getElementById('learnDialog').style.display = 'block';
+}
+function closeLearnDialog() {
+  document.getElementById('learnDialog').style.display = 'none';
+}
+
+// 拖拽
+var dragData = { dragging: false, startX: 0, startY: 0, origX: 0, origY: 0 };
+function startDrag(e) {
+  var box = document.getElementById('learnDialogBox');
+  if (box.style.transform && box.style.transform !== 'none') {
+    var rect = box.getBoundingClientRect();
+    box.style.top = rect.top + 'px';
+    box.style.left = rect.left + 'px';
+    box.style.transform = 'none';
+  }
+  dragData.dragging = true;
+  dragData.startX = e.clientX;
+  dragData.startY = e.clientY;
+  dragData.origX = parseInt(box.style.left) || 0;
+  dragData.origY = parseInt(box.style.top) || 0;
+  document.onmousemove = onDrag;
+  document.onmouseup = stopDrag;
+  e.preventDefault();
+}
+function onDrag(e) {
+  if (!dragData.dragging) return;
+  var box = document.getElementById('learnDialogBox');
+  box.style.left = (dragData.origX + e.clientX - dragData.startX) + 'px';
+  box.style.top = (dragData.origY + e.clientY - dragData.startY) + 'px';
+  e.preventDefault();
+}
+function stopDrag() {
+  dragData.dragging = false;
+  document.onmousemove = null;
+  document.onmouseup = null;
+}
+
+// 手动学习
+function learnMove_click() {
+  var lock = parseInt(document.getElementById('inputLock').value);
+  var mv = parseInt(document.getElementById('inputMv').value);
+  var weight = parseInt(document.getElementById('inputWeight').value) || 5;
+  var status = document.getElementById('learnStatus');
+  if (isNaN(lock) || isNaN(mv)) {
+    status.textContent = '请输入lock和mv';
+    status.style.color = 'red';
+    return;
+  }
+  if (typeof BookManager === 'undefined') {
+    status.textContent = 'BookManager未加载';
+    status.style.color = 'red';
+    return;
+  }
+  if (BookManager.addEntry(lock, mv, weight)) {
+    status.textContent = '已学习: lock=' + lock + ', mv=' + mv;
+    status.style.color = 'green';
+  } else {
+    status.textContent = '添加失败';
+    status.style.color = 'red';
+  }
+}
+
+function exportBook_click() {
+  var status = document.getElementById('learnStatus');
+  if (typeof BookManager === 'undefined') {
+    status.textContent = 'BookManager未加载';
+    status.style.color = 'red';
+    return;
+  }
+  var blob = new Blob([BookManager.exportAsBookJS()], { type: 'text/javascript' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'book.js';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  status.textContent = 'book.js 已导出';
+  status.style.color = 'green';
+}
+
+// 棋谱学习
+function learnFromFile_click() {
+  var fileInput = document.getElementById('fileInput');
+  var status = document.getElementById('learnFileStatus');
+  if (!fileInput.files || fileInput.files.length === 0) {
+    status.textContent = '请选择棋谱文件';
+    status.style.color = 'red';
+    return;
+  }
+  if (typeof BookLearner === 'undefined') {
+    status.textContent = 'BookLearner未加载';
+    status.style.color = 'red';
+    return;
+  }
+  var file = fileInput.files[0];
+  status.textContent = '正在学习...';
+  status.style.color = 'blue';
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    BookLearner.learnFromPGN(e.target.result).then(function(result) {
+      status.textContent = result.message;
+      status.style.color = result.success ? 'green' : 'red';
+    });
+  };
+  reader.onerror = function() {
+    status.textContent = '读取文件失败';
+    status.style.color = 'red';
+  };
+  reader.readAsText(file);
+}
+
+function testLearner_click() {
+  var status = document.getElementById('learnFileStatus');
+  if (typeof BookLearner === 'undefined') {
+    status.textContent = 'BookLearner未加载';
+    status.style.color = 'red';
+    return;
+  }
+  var testPGN = '1. 炮二平五 马8进7 2. 马二进三 车9平8';
+  status.textContent = '测试中...';
+  status.style.color = 'blue';
+  BookLearner.learnFromPGN(testPGN).then(function(result) {
+    status.textContent = '测试: ' + result.message;
+    status.style.color = result.success ? 'green' : 'red';
+  });
+}
+
+// 保存收获到 GitHub（支持弹窗询问）
+// 保存收获到 GitHub（直接从 keyList 提取）
+function saveHarvest() {
+  var status = document.getElementById('harvestStatus');
+
+  if (!board || !board.pos || board.pos.mvList.length <= 1) {
+    status.textContent = '没有可保存的对局';
+    status.style.color = 'red';
+    return;
+  }
+
+  var isWin = (board.result === RESULT_WIN);
+  var isDraw = (board.result === RESULT_DRAW);
+  var isLoss = (board.result === RESULT_LOSS);
+
+  // 非赢棋时弹窗询问
+  if (!isWin) {
+    var resultText = isDraw ? '和棋' : '输棋';
+    var shouldSave = confirm(
+        '当前对局结果为【' + resultText + '】，\n' +
+        '是否仍要保存本局的走法数据？\n' +
+        '（非赢棋保存的走法权重将自动降低）'
+    );
+    if (!shouldSave) {
+      status.textContent = '已取消保存';
+      status.style.color = '#888';
+      return;
+    }
+  }
+
+  status.textContent = '正在提取走法...';
+  status.style.color = 'blue';
+
+  var pos = board.pos;
+  var harvestData = [];
+  var mvList = pos.mvList;
+  var keyList = pos.keyList;
+
+  // 调试输出
+  console.log('=== 走法列表 (mvList) ===');
+  console.log(mvList);
+  console.log('=== 密钥列表 (keyList) ===');
+  console.log(keyList);
+
+  for (var i = 1; i < mvList.length; i++) {
+    var mv = mvList[i];
+    if (typeof mv !== 'number' || mv <= 0) {
+      console.warn('跳过无效走法:', mv);
+      continue;
+    }
+
+    // 走法前的 lock = keyList[i-1]
+    var lock = keyList[i-1] >>> 1;
+    if (lock === undefined || isNaN(lock) || lock === 0) {
+      console.warn('lock 无效，跳过:', lock);
+      continue;
+    }
+
+    // 基础权重 5
+    var weight = 5;
+    // 非赢棋时降低权重
+    if (!isWin) {
+      weight = Math.max(1, weight - 2);
+    }
+
+    harvestData.push([lock, mv, weight]);
+    console.log('✅ 提取:', 'lock=' + lock, 'mv=' + mv, 'weight=' + weight);
+  }
+
+  if (harvestData.length === 0) {
+    status.textContent = '没有提取到有效走法，请查看控制台日志';
+    status.style.color = 'red';
+    return;
+  }
+
+  status.textContent = '正在提交到 GitHub...';
+  status.style.color = 'blue';
+
+  if (typeof BookManager !== 'undefined') {
+    if (!BookManager.config.token) {
+      status.textContent = '❌ GitHub Token 未配置，请在页面中设置';
+      status.style.color = 'red';
+      return;
+    }
+    BookManager.saveToGitHub(harvestData).then(function(result) {
+      if (result.success) {
+        status.textContent = '🏆 收获已保存！共 ' + harvestData.length + ' 条记录';
+        status.style.color = 'green';
+        BookManager.addEntries(harvestData);
+      } else {
+        status.textContent = '❌ 保存失败: ' + result.message;
+        status.style.color = 'red';
+        console.error('GitHub 保存错误:', result);
+      }
+    });
+  } else {
+    status.textContent = '❌ BookManager 未加载';
+    status.style.color = 'red';
+  }
+}
+
+// 控制台调试
+function debugPosition() {
+  if (!board || !board.pos) return;
+  var lock = board.pos.zobristLock >>> 1;
+  console.log('lock:', lock);
+  console.log('FEN:', board.pos.toFen());
+  var mvs = board.pos.generateMoves(null);
+  for (var i = 0; i < mvs.length; i++) {
+    console.log('mv=' + mvs[i] + ', ' + move2Iccs(mvs[i]));
+  }
+  var lockInput = document.getElementById('inputLock');
+  if (lockInput) lockInput.value = lock;
+  return { lock: lock, mvs: mvs };
+}
+window.debugPosition = debugPosition;
+
+    --></script>
+  </body>
+</html>
